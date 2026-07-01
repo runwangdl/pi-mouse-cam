@@ -31,16 +31,17 @@ _latest = {"jpg": None}
 _cond = threading.Condition()
 
 
-def capture_loop(device, proc_w, min_area):
+def capture_loop(device, proc_w, min_area, quality):
     cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)      # 只留最新帧,降延迟
 
     # 背景差分器:学习静止背景,把移动的仓鼠减出来
     bg = cv2.createBackgroundSubtractorMOG2(history=300, varThreshold=30,
                                             detectShadows=False)
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     active_frames = 0
     total_frames = 0
 
@@ -50,14 +51,14 @@ def capture_loop(device, proc_w, min_area):
             time.sleep(0.1)
             continue
 
-        # 统一处理分辨率,保证 Pi3 上近实时
+        # 处理分辨率越小越快(MOG2/形态学/编码都随像素数平方级下降)
         h, w = frame.shape[:2]
         if w != proc_w:
             frame = cv2.resize(frame, (proc_w, int(h * proc_w / w)))
 
         fg = bg.apply(frame)
         fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, kernel)
-        fg = cv2.dilate(fg, kernel, iterations=2)
+        fg = cv2.dilate(fg, kernel, iterations=1)
 
         contours, _ = cv2.findContours(fg, cv2.RETR_EXTERNAL,
                                        cv2.CHAIN_APPROX_SIMPLE)
@@ -84,7 +85,7 @@ def capture_loop(device, proc_w, min_area):
                     (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
         ok, jpg = cv2.imencode(".jpg", frame,
-                               [cv2.IMWRITE_JPEG_QUALITY, 80])
+                               [cv2.IMWRITE_JPEG_QUALITY, quality])
         if ok:
             with _cond:
                 _latest["jpg"] = jpg.tobytes()
@@ -131,14 +132,17 @@ def main():
     ap = argparse.ArgumentParser(description="Hamster detection MJPEG stream")
     ap.add_argument("-d", "--device", default="/dev/video0")
     ap.add_argument("-p", "--port", type=int, default=8000)
-    ap.add_argument("--proc-width", type=int, default=640,
-                    help="处理/显示宽度(越小越流畅)")
-    ap.add_argument("--min-area", type=int, default=500,
+    ap.add_argument("--proc-width", type=int, default=320,
+                    help="处理/显示宽度(越小越流畅;320≈实时,640更清晰但慢)")
+    ap.add_argument("--min-area", type=int, default=200,
                     help="最小运动区域面积(过滤噪声,越大越不敏感)")
+    ap.add_argument("--quality", type=int, default=65,
+                    help="JPEG 质量(越低编码越快、带宽越小)")
     args = ap.parse_args()
 
     t = threading.Thread(target=capture_loop,
-                         args=(args.device, args.proc_width, args.min_area),
+                         args=(args.device, args.proc_width, args.min_area,
+                               args.quality),
                          daemon=True)
     t.start()
     print("检测直播中: http://<pi-ip>:%d/" % args.port)
