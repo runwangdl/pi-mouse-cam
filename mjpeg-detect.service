@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 # 背景差分检测版:框出移动的仓鼠 + 活跃/静止 + 活动量
-ExecStart=/usr/bin/python3 /home/pi/pi-mouse-cam/mjpeg_detect.py -d /dev/video0 -p 8000 --proc-width 320 --min-area 200 --quality 65 --roi 0,0,0.47,1
+ExecStart=/usr/bin/python3 /home/pi/pi-mouse-cam/mjpeg_detect.py -d /dev/video0 -p 8000 --width 1280 --height 720 --proc-width 320 --min-area 200 --quality 80 --roi 0,0,0.47,1
 Restart=always
 RestartSec=3
 User=pi
