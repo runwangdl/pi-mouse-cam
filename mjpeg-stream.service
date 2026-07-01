@@ -1,0 +1,13 @@
+[Unit]
+Description=pi-mouse-cam MJPEG live stream
+After=network.target
+
+[Service]
+# 按需修改路径/用户/参数(-d 设备 -W 宽 -H 高 -p 端口)
+ExecStart=/usr/bin/python3 /home/pi/pi-mouse-cam/mjpeg_stream.py -d /dev/video0 -W 1280 -H 720 -p 8000
+Restart=always
+RestartSec=3
+User=pi
+
+[Install]
+WantedBy=multi-user.target
