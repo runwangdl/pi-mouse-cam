@@ -31,7 +31,7 @@ _latest = {"jpg": None}
 _cond = threading.Condition()
 
 
-def capture_loop(device, proc_w, min_area, quality):
+def capture_loop(device, proc_w, min_area, quality, roi):
     cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -55,8 +55,17 @@ def capture_loop(device, proc_w, min_area, quality):
         h, w = frame.shape[:2]
         if w != proc_w:
             frame = cv2.resize(frame, (proc_w, int(h * proc_w / w)))
+        h, w = frame.shape[:2]
 
-        fg = bg.apply(frame)
+        # ROI:只在笼子区域内做检测,忽略画面外(手/衣服/笔记本)的动静
+        if roi:
+            rx1, ry1 = int(roi[0] * w), int(roi[1] * h)
+            rx2, ry2 = int(roi[2] * w), int(roi[3] * h)
+        else:
+            rx1, ry1, rx2, ry2 = 0, 0, w, h
+        sub = frame[ry1:ry2, rx1:rx2]
+
+        fg = bg.apply(sub)
         fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, kernel)
         fg = cv2.dilate(fg, kernel, iterations=1)
 
@@ -64,12 +73,17 @@ def capture_loop(device, proc_w, min_area, quality):
                                        cv2.CHAIN_APPROX_SIMPLE)
         big = [c for c in contours if cv2.contourArea(c) > min_area]
 
+        # 画出 ROI 边框(灰色),让你看清监测区域
+        if roi:
+            cv2.rectangle(frame, (rx1, ry1), (rx2, ry2), (120, 120, 120), 1)
+
         total_frames += 1
         detected = bool(big)
         if detected:
             active_frames += 1
             c = max(big, key=cv2.contourArea)
             x, y, bw, bh = cv2.boundingRect(c)
+            x, y = x + rx1, y + ry1                 # 偏移回全图坐标
             cv2.rectangle(frame, (x, y), (x + bw, y + bh), (0, 255, 0), 2)
             cx, cy = x + bw // 2, y + bh // 2
             cv2.circle(frame, (cx, cy), 3, (0, 255, 0), -1)
@@ -138,11 +152,18 @@ def main():
                     help="最小运动区域面积(过滤噪声,越大越不敏感)")
     ap.add_argument("--quality", type=int, default=65,
                     help="JPEG 质量(越低编码越快、带宽越小)")
+    ap.add_argument("--roi", default=None,
+                    help="只检测该区域,4 个 0~1 小数 x1,y1,x2,y2(如笼子在左半:0,0,0.47,1)")
     args = ap.parse_args()
+
+    roi = None
+    if args.roi:
+        roi = [float(v) for v in args.roi.split(",")]
+        assert len(roi) == 4, "--roi 需要 4 个用逗号分隔的 0~1 小数"
 
     t = threading.Thread(target=capture_loop,
                          args=(args.device, args.proc_width, args.min_area,
-                               args.quality),
+                               args.quality, roi),
                          daemon=True)
     t.start()
     print("检测直播中: http://<pi-ip>:%d/" % args.port)
