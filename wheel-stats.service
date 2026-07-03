@@ -1,0 +1,10 @@
+[Unit]
+Description=hamster wheel stats dashboard
+After=network.target
+[Service]
+ExecStart=/usr/bin/python3 -u /home/pi/pi-mouse-cam/wheel_stats.py -p 8090
+Restart=always
+RestartSec=3
+User=pi
+[Install]
+WantedBy=multi-user.target

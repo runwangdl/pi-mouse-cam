@@ -1,0 +1,10 @@
+[Unit]
+Description=hamster night activity monitor
+After=network.target
+[Service]
+ExecStart=/usr/bin/python3 /home/pi/pi-mouse-cam/mjpeg_activity.py -p 8000 --width 1280 --height 720 --night-start 20 --night-end 8 --ntfy hamster-3dd726c7
+Restart=always
+RestartSec=3
+User=pi
+[Install]
+WantedBy=multi-user.target
